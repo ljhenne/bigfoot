@@ -1,15 +1,12 @@
-from enum import Enum
-
-
-class StrEnum(str, Enum):
-
-    def __repr__(self):
-        return self.value
-
-    def __str__(self):
-        return self.value
-
-
-class Target(StrEnum):
-    BIGQUERY = "bq"
-    SHEETS = "sheets"
+# Order matters here
+SHEETS_HEADERS = [
+    "Full name"
+    "Name",
+    "Field type",
+    "Mode",
+    "Description",
+    "Policy tags",
+    "Precision",
+    "Scale",
+    "Max length"
+]
