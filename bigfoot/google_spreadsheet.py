@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Union
 
 from google.cloud.bigquery.schema import SchemaField
 from pydantic import BaseModel, Field
@@ -9,11 +9,12 @@ from bigfoot.bigfoot_schema import BigfootSchema
 
 
 class Dimension(str, Enum):
+    COLUMNS = "COLUMNS"
     ROWS = "ROWS"
 
 
 class DimensionRange(BaseModel):
-    sheet_id: Optional[int]
+    sheet_id: Optional[Union[int, str]]
     dimension: Dimension
     start_index: int
     end_index: int
@@ -21,6 +22,7 @@ class DimensionRange(BaseModel):
 
 class DimensionGroup(BaseModel):
     range: DimensionRange
+    collapsed: Optional[bool]
 
 
 class ExtendedValue(BaseModel):
@@ -96,15 +98,30 @@ class AddDimensionGroupRequest(BaseModel):
     add_dimension_group: DimensionGroup
 
 
-class BatchUpdateRequestBody(BaseModel):
-    requests: List[AddDimensionGroupRequest]
+class AutoResizeDimensionsRequest(BaseModel):
+    dimensions: DimensionRange
 
-    @classmethod
-    def add_dimension_groups_request(cls, dimension_groups: List[DimensionGroup]) -> 'BatchUpdateRequestBody':
-        requests = list()
+
+class AutoResizeDimensionsRequestWrapper(BaseModel):
+    auto_resize_dimensions: AutoResizeDimensionsRequest
+
+
+class BatchUpdateRequestBody(BaseModel):
+    requests: List[Union[AddDimensionGroupRequest, AutoResizeDimensionsRequestWrapper]]
+
+    def add_dimension_groups_request(self, dimension_groups: List[DimensionGroup]):
         for dimension_group in dimension_groups:
-            requests.append(AddDimensionGroupRequest(add_dimension_group=dimension_group))
-        return cls(requests=requests)
+            self.requests.append(AddDimensionGroupRequest(add_dimension_group=dimension_group))
+
+    def add_auto_resize_dimensions_request(self, sheet_id: str):
+        dimension_range = DimensionRange(
+            sheet_id=sheet_id,
+            dimension=Dimension.COLUMNS,
+            start_index=0,
+            end_index=len(SHEETS_HEADERS)
+        )
+        auto_resize_dimensions_request = AutoResizeDimensionsRequest(dimensions=dimension_range)
+        self.requests.append(AutoResizeDimensionsRequestWrapper(auto_resize_dimensions=auto_resize_dimensions_request))
 
 
 class Sheet(BaseModel):
@@ -155,11 +172,11 @@ class GoogleSheetsSchema(BigfootSchema):
         properties = Properties(title=self.name)
         rows: List[RowData] = list()
 
-        def _parse_fields(fields: List[SchemaField], prefix: List):
+        def _parse_fields(fields: List[SchemaField], field_path: List):
             for field in fields:
-                prefix.append(field.name)
+                field_path.append(field.name)
                 row_values = [
-                    ".".join(prefix + [field.name]),
+                    ".".join(field_path),
                     field.name,
                     field.field_type,
                     field.mode,
@@ -171,8 +188,8 @@ class GoogleSheetsSchema(BigfootSchema):
                 ]
                 rows.append(RowData.from_list(row_values))
                 if field.field_type == "RECORD" and field.fields:
-                    _parse_fields(field.fields, prefix)
-                prefix.pop()
+                    _parse_fields(field.fields, field_path)
+                field_path.pop()
         _parse_fields(self.api_repr, list())
         fields_grid_data = GridData(start_row=1, start_column=0, row_data=rows)
         headers_grid_data = GridData.headers_grid_data()

@@ -51,14 +51,17 @@ def create_sheet(schema: GoogleSheetsSchema) -> CreateSheetResponse:
 
 def format_sheet(schema: GoogleSheetsSchema, spreadsheet_id: str, sheet_id: str):
     dimension_groups = schema.mk_dimension_groups(sheet_id)
-    batch_update_request_body = BatchUpdateRequestBody.add_dimension_groups_request(dimension_groups).dict()
+    batch_update_request_body = BatchUpdateRequestBody(requests=[])
+    batch_update_request_body.add_dimension_groups_request(dimension_groups)
+    batch_update_request_body.add_auto_resize_dimensions_request(sheet_id)
+    body = batch_update_request_body.dict(exclude_none=True)
     spreadsheets = get_google_service("sheets").spreadsheets()
-    request = spreadsheets.batchUpdate(spreadsheetId=spreadsheet_id, body=batch_update_request_body)
-    return request.execute()
+    request = spreadsheets.batchUpdate(spreadsheetId=spreadsheet_id, body=body)
+    request.execute()
 
 
 @sheets_app.command()
 def create(name: str):
     schema = GoogleSheetsSchema(name=name)
     create_sheet_response = create_sheet(schema)
-    print(format_sheet(schema, create_sheet_response.spreadsheet_id, create_sheet_response.sheets[0].properties.sheet_id))
+    format_sheet(schema, create_sheet_response.spreadsheet_id, create_sheet_response.sheets[0].properties.sheet_id)
